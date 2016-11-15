@@ -153,7 +153,7 @@
 		});
 
 		//inverting the right panel
-		$('.ms-right').html( $('.ms-right').find('.ms-section').get().reverse());
+		// $('.ms-right').html( $('.ms-right').find('.ms-section').get().reverse());
 
 		$('.ms-left .ms-section, .ms-right .ms-section').each(function(){
 			var sectionIndex = $(this).index();
@@ -171,7 +171,7 @@
 
 			//if no active section is defined, the 1st one will be the default one
 			if(!$('.ms-left .ms-section.active').length){
-				$('.ms-right').find('.ms-section').last().addClass('active');
+				$('.ms-right').find('.ms-section').first().addClass('active');
 				$('.ms-left').find('.ms-section').first().addClass('active');
 			}
 
@@ -354,7 +354,7 @@
 			}
 		}
 
-		MS.moveSectionUp = function(){
+		MS.moveSectionUp = function(side){
 			var prev = $('.ms-left .ms-section.active').prev('.ms-section');
 
 			if(!prev.length && options.loopTop){
@@ -362,11 +362,11 @@
 			}
 
 			if (prev.length) {
-				scrollPage(prev);
+				scrollPage(prev, side);
 			}
 		};
 
-		MS.moveSectionDown = function (){
+		MS.moveSectionDown = function (side){
 			var next = $('.ms-left .ms-section.active').next('.ms-section');
 
 			if(!next.length && options.loopBottom ){
@@ -374,11 +374,11 @@
 			}
 
 			if(next.length){
-				scrollPage(next);
+				scrollPage(next, side);
 			}
 		};
 
-		MS.moveTo = function (section){
+		MS.moveTo = function (section, side){
 			var destiny = '';
 
 			if(isNaN(section)){
@@ -387,17 +387,21 @@
 				destiny = $('.ms-left .ms-section').eq( (section -1) );
 			}
 
-			scrollPage(destiny);
+			scrollPage(destiny, side);
 		};
 
-		function scrollPage(leftDestination){
+		function scrollPage(leftDestination, startSide){
+			console.log(leftDestination, startSide);
+
 			var leftDestinationIndex = leftDestination.index();
-			var rightDestination = $('.ms-right').find('.ms-section').eq( numberSections -1 - leftDestinationIndex);
-			var rightDestinationIndex = numberSections - 1 - leftDestinationIndex;
+			var rightDestination = $('.ms-right').find('.ms-section').eq(leftDestinationIndex);
+			var rightDestinationIndex = leftDestination.index();
 			var anchorLink  = leftDestination.data('anchor');
 			var activeSection = $('.ms-left .ms-section.active');
 			var leavingSection = activeSection.index() + 1;
 			var yMovement = getYmovement(leftDestination);
+
+			startSide = startSide === 'right' ? 'right' : 'left';
 
 			//preventing from activating the MouseWheelHandler event
 			//more than once if the page is scrolling
@@ -413,43 +417,44 @@
 
 			setURLHash(anchorLink);
 
-			// Use CSS3 translate functionality or...
-			if (options.css3){
-				//callback (onLeave)
-				$.isFunction(options.onLeave) && options.onLeave.call(this, leavingSection, (leftDestinationIndex + 1), yMovement);
+			//callback (onLeave)
+			$.isFunction(options.onLeave) && options.onLeave.call(this, leavingSection, (leftDestinationIndex + 1), yMovement);
 
+			var afterLoadCallBack = function(){
+				$.isFunction(options.afterLoad) && options.afterLoad.call(this, anchorLink, (leftDestinationIndex + 1));
+
+				setTimeout(function () {
+					isMoving = false;
+				}, scrollDelay);
+			};
+			var moveLeft, moveRight;
+
+			if (options.css3){
 				var translate3dLeft = 'translate3d(0px, -' + topPos['left'] + 'px, 0px)';
 				var translate3dRight = 'translate3d(0px, -' + topPos['right'] + 'px, 0px)';
 
-				transformContainer($('.ms-left'), translate3dLeft, true);
-				transformContainer($('.ms-right'), translate3dRight, true);
+				moveLeft = function() { transformContainer($('.ms-left'), translate3dLeft, true); }
+				moveRight = function() { transformContainer($('.ms-right'), translate3dRight, true); }
+			} else {
+				moveLeft = function(cb) { 
+					$('.ms-left').animate({
+						'top': -topPos['left']
+					}, options.scrollingSpeed, options.easing, cb);
+				}
 
-				setTimeout(function () {
-					//callback (afterLoad)
-					$.isFunction(options.afterLoad) && options.afterLoad.call(this, anchorLink, (leftDestinationIndex + 1));
-
-					setTimeout(function () {
-						isMoving = false;
-					}, scrollDelay);
-				}, options.scrollingSpeed);
-			}else{
-				//callback (onLeave)
-				$.isFunction(options.onLeave) && options.onLeave.call(this, leavingSection, (leftDestinationIndex + 1), yMovement);
-
-				$('.ms-left').animate({
-					'top': -topPos['left']
-				}, options.scrollingSpeed, options.easing, function(){
-					$.isFunction(options.afterLoad) && options.afterLoad.call(this, anchorLink, (leftDestinationIndex + 1));
-
-					setTimeout(function () {
-						isMoving = false;
-					}, scrollDelay);
-				});
-
-				$('.ms-right').animate({
-					'top': -topPos['right']
-				}, options.scrollingSpeed, options.easing);
+				moveRight = function(cb) {
+					$('.ms-right').animate({
+						'top': -topPos['right']
+					}, options.scrollingSpeed, options.easing, cb);
+				}
 			}
+
+			var A = startSide === 'left' ? moveLeft : moveRight;
+			var B = startSide === 'left' ? moveRight : moveLeft;
+
+			A();
+			setTimeout(B, options.scrollingSpeed);
+			setTimeout(afterLoadCallBack, options.scrollingSpeed * 2);
 
 			//flag to avoid callingn `scrollPage()` twice in case of using anchor links
 			lastScrolledDestiny = anchorLink;
@@ -493,6 +498,8 @@
 		function MouseWheelHandler(e) {
 			// cross-browser wheel delta
 			e = window.event || e;
+			var side = Math.max(e.offsetX, e.clientX) > $(window).width() / 2 ? 'right' : 'left';
+			
 			var delta = Math.max(-1, Math.min(1,
 					(e.wheelDelta || -e.deltaY || -e.detail)));
 
@@ -500,12 +507,12 @@
 
 				//scrolling down?
 				if (delta < 0) {
-					MS.moveSectionDown();
+					MS.moveSectionDown(side);
 				}
 
 				//scrolling up?
 				else {
-					MS.moveSectionUp();
+					MS.moveSectionUp(side);
 				}
 			}
 
@@ -703,7 +710,7 @@
 		};
 
 
-
+		var touchStartSide = 'left';
 		var touchStartY = 0;
 		var touchStartX = 0;
 		var touchEndY = 0;
@@ -734,10 +741,9 @@
 					if (Math.abs(touchStartY - touchEndY) > ($(window).height() / 100 * options.touchSensitivity)) {
 
 						if (touchStartY > touchEndY) {
-							MS.moveSectionDown();
-
+							MS.moveSectionDown(touchStartSide);
 						} else if (touchEndY > touchStartY) {
-							MS.moveSectionUp();
+							MS.moveSectionUp(touchStartSide);
 						}
 					}
 				}
@@ -762,6 +768,7 @@
 
 			if(isReallyTouch(e)){
 				var touchEvents = getEventsPage(e);
+				touchStartSide = touchEvents['x'] > $(window).width() / 2 ? 'right' : 'left';
 				touchStartY = touchEvents['y'];
 				touchStartX = touchEvents['x'];
 			}
